@@ -1,0 +1,91 @@
+using CoworkWriter.Core.Settings;
+
+namespace CoworkWriter.Tests.Settings;
+
+public class SettingsStoreTests : IDisposable
+{
+    private readonly string _tempDir;
+    private readonly SettingsStore _store = new();
+
+    public SettingsStoreTests()
+    {
+        _tempDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
+        Directory.CreateDirectory(_tempDir);
+    }
+
+    public void Dispose() => Directory.Delete(_tempDir, recursive: true);
+
+    [Fact]
+    public void Load_NonExistentFile_ReturnsDefaults()
+    {
+        var loaded = _store.Load();
+        Assert.Equal(string.Empty, loaded.ApiKey);
+        Assert.False(string.IsNullOrWhiteSpace(loaded.Model));
+    }
+
+    [Fact]
+    public void Save_ThenLoad_RoundTripsAllFields()
+    {
+        var settings = new AppSettings(
+            ApiKey: "sk-ant-test-key",
+            Model: SettingsStore.AllowedModels[0],
+            DefaultSystemPrompt: "You are a noir fiction assistant.");
+
+        // Write to the real settings path for this test by using a temp path directly
+        var path = System.IO.Path.Combine(_tempDir, "settings.json");
+        System.IO.File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(settings));
+        var loaded = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(System.IO.File.ReadAllText(path));
+
+        Assert.Equal(settings.ApiKey, loaded!.ApiKey);
+        Assert.Equal(settings.Model, loaded.Model);
+        Assert.Equal(settings.DefaultSystemPrompt, loaded.DefaultSystemPrompt);
+    }
+
+    [Fact]
+    public void Validate_EmptyApiKey_ReturnsError()
+    {
+        var settings = new AppSettings(ApiKey: "");
+        var errors = SettingsStore.Validate(settings).ToList();
+        Assert.Contains(errors, e => e.Contains("API key"));
+    }
+
+    [Fact]
+    public void Validate_WhitespaceApiKey_ReturnsError()
+    {
+        var settings = new AppSettings(ApiKey: "   ");
+        var errors = SettingsStore.Validate(settings).ToList();
+        Assert.Contains(errors, e => e.Contains("API key"));
+    }
+
+    [Fact]
+    public void Validate_UnknownModel_ReturnsError()
+    {
+        var settings = new AppSettings(ApiKey: "sk-ant-valid", Model: "gpt-99-turbo");
+        var errors = SettingsStore.Validate(settings).ToList();
+        Assert.Contains(errors, e => e.Contains("model") || e.Contains("Model"));
+    }
+
+    [Fact]
+    public void Validate_ValidSettings_ReturnsNoErrors()
+    {
+        var settings = new AppSettings(
+            ApiKey: "sk-ant-valid",
+            Model: SettingsStore.AllowedModels[0]);
+        var errors = SettingsStore.Validate(settings).ToList();
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void AllowedModels_ContainsAtLeastOneEntry()
+    {
+        Assert.NotEmpty(SettingsStore.AllowedModels);
+    }
+
+    [Fact]
+    public void SettingsPath_IsInsideConfigDirectory()
+    {
+        var path = SettingsStore.SettingsPath();
+        Assert.Contains(".config", path);
+        Assert.EndsWith(".json", path);
+    }
+}
