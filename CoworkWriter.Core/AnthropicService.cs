@@ -26,6 +26,7 @@ public class AnthropicService : IAnthropicService
     }
 
     public IReadOnlyList<Message> History => _history.Messages;
+    public string? SystemPrompt { get; set; }
 
     public async IAsyncEnumerable<string> StreamMessageAsync(
         string userMessage,
@@ -39,7 +40,10 @@ public class AnthropicService : IAnthropicService
             MaxTokens = 4096,
             Model = _model,
             Stream = true,
-            Temperature = 1.0m
+            Temperature = 1.0m,
+            System = SystemPrompt is not null
+                ? [new SystemMessage(SystemPrompt) { CacheControl = new CacheControl { Type = CacheControlType.ephemeral } }]
+                : null
         };
 
         var responses = new List<MessageResponse>();
