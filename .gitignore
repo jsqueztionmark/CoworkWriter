@@ -1,0 +1,10 @@
+# Environment / secrets
+.env
+
+# .NET
+bin/
+obj/
+*.user
+
+# Rider
+.idea/

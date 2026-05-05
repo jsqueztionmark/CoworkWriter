@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="CoworkWriter.CLI/CoworkWriter.CLI.csproj" />
+  <Project Path="CoworkWriter.Core/CoworkWriter.Core.csproj" />
+  <Project Path="CoworkWriter.Gtk/CoworkWriter.Gtk.csproj" />
+  <Project Path="CoworkWriter.Tests/CoworkWriter.Tests.csproj" />
+</Solution>
