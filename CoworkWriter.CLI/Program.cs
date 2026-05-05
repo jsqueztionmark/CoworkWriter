@@ -11,7 +11,8 @@ if (string.IsNullOrWhiteSpace(apiKey))
     return 1;
 }
 
-var config = new AppConfig(apiKey);
+var model = Environment.GetEnvironmentVariable("ANTHROPIC_MODEL");
+var config = model is not null ? new AppConfig(apiKey, model) : new AppConfig(apiKey);
 var service = new AnthropicService(config);
 var contextBuilder = new ContextBuilder();
 
@@ -198,7 +199,7 @@ static void LoadEnvFile()
                 var idx = trimmed.IndexOf('=');
                 var key = trimmed[..idx].Trim();
                 var value = trimmed[(idx + 1)..].Trim();
-                if (!string.IsNullOrEmpty(key))
+                if (!string.IsNullOrEmpty(key) && Environment.GetEnvironmentVariable(key) is null)
                     Environment.SetEnvironmentVariable(key, value);
             }
             break;
