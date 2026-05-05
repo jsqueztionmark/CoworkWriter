@@ -58,7 +58,7 @@ while (true)
 
     if (input.StartsWith("/load ", StringComparison.OrdinalIgnoreCase))
     {
-        var path = input[6..].Trim();
+        var path = input[6..].Trim().Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
         var result = ScrivenerParser.Parse(path);
         if (!result.Success)
         {
