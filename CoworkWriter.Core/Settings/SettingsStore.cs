@@ -28,15 +28,29 @@ public class SettingsStore
     public AppSettings Load()
     {
         var path = SettingsPath();
-        if (!File.Exists(path)) return new AppSettings();
-        try
+        AppSettings settings;
+        if (!File.Exists(path))
+            settings = new AppSettings();
+        else
         {
-            return JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path)) ?? new AppSettings();
+            try
+            {
+                settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path)) ?? new AppSettings();
+            }
+            catch (JsonException)
+            {
+                settings = new AppSettings();
+            }
         }
-        catch (JsonException)
+
+        if (string.IsNullOrWhiteSpace(settings.ApiKey))
         {
-            return new AppSettings();
+            var envKey = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+            if (!string.IsNullOrWhiteSpace(envKey))
+                settings = settings with { ApiKey = envKey };
         }
+
+        return settings;
     }
 
     public static IEnumerable<string> Validate(AppSettings settings)

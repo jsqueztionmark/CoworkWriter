@@ -18,9 +18,50 @@ public class SettingsStoreTests : IDisposable
     [Fact]
     public void Load_NonExistentFile_ReturnsDefaults()
     {
-        var loaded = _store.Load();
-        Assert.Equal(string.Empty, loaded.ApiKey);
-        Assert.False(string.IsNullOrWhiteSpace(loaded.Model));
+        var saved = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+        try
+        {
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null);
+            var loaded = _store.Load();
+            Assert.Equal(string.Empty, loaded.ApiKey);
+            Assert.False(string.IsNullOrWhiteSpace(loaded.Model));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", saved);
+        }
+    }
+
+    [Fact]
+    public void Load_NoSavedKey_FallsBackToEnvironmentVariable()
+    {
+        var saved = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+        try
+        {
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", "sk-ant-env-key");
+            var loaded = _store.Load();
+            Assert.Equal("sk-ant-env-key", loaded.ApiKey);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", saved);
+        }
+    }
+
+    [Fact]
+    public void Load_NoSavedKey_NoEnvVar_ReturnsEmptyApiKey()
+    {
+        var saved = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+        try
+        {
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", null);
+            var loaded = _store.Load();
+            Assert.Equal(string.Empty, loaded.ApiKey);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", saved);
+        }
     }
 
     [Fact]
