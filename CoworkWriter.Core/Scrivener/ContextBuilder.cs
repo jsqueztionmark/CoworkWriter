@@ -6,14 +6,18 @@ public class ContextBuilder
 {
     private const int MaxContextChars = 80_000;
 
-    public string Build(ScrivenerProject project, IEnumerable<string> selectedIds)
+    public string Build(ScrivenerProject project, IEnumerable<string> selectedIds, IEnumerable<string>? pinnedIds = null)
     {
-        var selectedSet = selectedIds.ToHashSet();
-        if (selectedSet.Count == 0)
+        var pinned = pinnedIds?.ToHashSet() ?? [];
+        var selected = selectedIds.ToHashSet();
+
+        if (pinned.Count == 0 && selected.Count == 0)
             return string.Empty;
 
-        var selectedItems = project.AllItems()
-            .Where(item => selectedSet.Contains(item.Id))
+        var allItems = project.AllItems().ToList();
+        var selectedItems = allItems
+            .Where(i => pinned.Contains(i.Id) || selected.Contains(i.Id))
+            .OrderBy(i => pinned.Contains(i.Id) ? 0 : 1)
             .ToList();
 
         if (selectedItems.Count == 0)

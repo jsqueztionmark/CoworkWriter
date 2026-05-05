@@ -60,4 +60,5 @@ public class AnthropicService : IAnthropicService
     }
 
     public void ClearHistory() => _history.Clear();
+    public void LoadHistory(ConversationHistory history) => _history.LoadFrom(history);
 }

@@ -18,4 +18,11 @@ public class ConversationHistory
         _messages.Add(new Message(responses));
 
     public void Clear() => _messages.Clear();
+
+    public void LoadFrom(ConversationHistory other)
+    {
+        _messages.Clear();
+        foreach (var msg in other.Messages)
+            _messages.Add(msg);
+    }
 }

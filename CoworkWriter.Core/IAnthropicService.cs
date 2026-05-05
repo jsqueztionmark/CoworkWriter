@@ -8,4 +8,5 @@ public interface IAnthropicService
     string? SystemPrompt { get; set; }
     IAsyncEnumerable<string> StreamMessageAsync(string userMessage, CancellationToken ct = default);
     void ClearHistory();
+    void LoadHistory(ConversationHistory history);
 }
