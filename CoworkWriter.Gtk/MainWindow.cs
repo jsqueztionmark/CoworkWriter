@@ -1,4 +1,5 @@
 using CoworkWriter.Core;
+using CoworkWriter.Core.Agentic;
 using CoworkWriter.Core.Scrivener;
 using CoworkWriter.Core.Settings;
 using CoworkWriter.Core.Writing;
@@ -41,6 +42,10 @@ public class MainWindow : Window
         _binderPanel.DocumentSelected += OnDocumentSelected;
 
         _chatPanel = new ChatPanel();
+        _chatPanel.MessageCompleted += OnMessageCompleted;
+        _chatPanel.WriteChapterRequested += OnWriteChapter;
+        _chatPanel.BatchEditRequested += OnBatchEdit;
+        _chatPanel.SaveToScrivRequested += OnSaveToScriv;
         _documentPanel = new DocumentPanel();
 
         InitService();
@@ -228,11 +233,174 @@ public class MainWindow : Window
         dialog.Destroy();
     }
 
+    private void OnWriteChapter()
+    {
+        if (_service is null) { SetStatus("Configure API key first."); return; }
+
+        var dialog = new TextAreaDialog(this, "Write Chapter", "Describe what happens in this chapter:");
+        var response = (ResponseType)dialog.Run();
+        var brief = dialog.InputText;
+        dialog.Destroy();
+
+        if (response != ResponseType.Accept || string.IsNullOrWhiteSpace(brief)) return;
+
+        var manuscriptContext = _project is not null
+            ? _contextBuilder.Build(_project, _selectedIds, _pinnedIds)
+            : "";
+
+        _chatPanel.SetBusy(true);
+        _chatPanel.AppendStatus("Writing chapter: outline → draft → review…");
+        SetStatus("Writing chapter…");
+
+        Task.Run(async () =>
+        {
+            try
+            {
+                var writer = new ChapterWriter(_service);
+                await foreach (var progress in writer.WriteChapterAsync(brief, manuscriptContext))
+                {
+                    var step = progress;
+                    GLib.Idle.Add(() =>
+                    {
+                        var label = step.Step switch
+                        {
+                            ChapterStep.Outline => "Outline",
+                            ChapterStep.Draft => "Draft",
+                            ChapterStep.Review => "Review",
+                            _ => "Result"
+                        };
+                        _chatPanel.AppendResult(label, step.Content);
+                        SetStatus($"Chapter: {label} complete");
+                        return false;
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                var msg = ex.Message;
+                GLib.Idle.Add(() => { _chatPanel.AppendStatus($"Error: {msg}"); return false; });
+            }
+            finally
+            {
+                GLib.Idle.Add(() =>
+                {
+                    _chatPanel.SetBusy(false);
+                    SetStatus("Chapter complete.");
+                    return false;
+                });
+            }
+        });
+    }
+
+    private void OnBatchEdit()
+    {
+        if (_service is null) { SetStatus("Configure API key first."); return; }
+        if (_project is null) { SetStatus("Load a project first."); return; }
+        if (_selectedIds.Count == 0) { SetStatus("Select documents to batch edit."); return; }
+
+        var dialog = new InputDialog(this, "Batch Edit", "Edit instruction to apply to all selected documents:");
+        var response = (ResponseType)dialog.Run();
+        var instruction = dialog.InputText;
+        dialog.Destroy();
+
+        if (response != ResponseType.Accept || string.IsNullOrWhiteSpace(instruction)) return;
+
+        _chatPanel.SetBusy(true);
+        _chatPanel.AppendStatus($"Batch editing {_selectedIds.Count} document(s)…");
+        SetStatus("Batch editing…");
+
+        var ids = _selectedIds.ToList();
+        Task.Run(async () =>
+        {
+            var processor = new BatchProcessor(_service);
+            var successCount = 0;
+            var failCount = 0;
+
+            await foreach (var result in processor.ProcessAsync(_project, ids, instruction))
+            {
+                var r = result;
+                GLib.Idle.Add(() =>
+                {
+                    if (r.Success)
+                        _chatPanel.AppendResult($"Edited: {r.Title}", r.Content);
+                    else
+                        _chatPanel.AppendStatus($"Failed: {r.Title} — {r.Error}");
+                    return false;
+                });
+
+                if (result.Success) successCount++;
+                else failCount++;
+            }
+
+            var s = successCount;
+            var f = failCount;
+            GLib.Idle.Add(() =>
+            {
+                _chatPanel.SetBusy(false);
+                SetStatus($"Batch complete: {s} succeeded, {f} failed.");
+                return false;
+            });
+        });
+    }
+
+    private void OnSaveToScriv()
+    {
+        if (_project is null) { SetStatus("Load a project first."); return; }
+
+        var lastResponse = _chatPanel.GetLastAssistantResponse();
+        if (string.IsNullOrWhiteSpace(lastResponse)) { SetStatus("No response to save."); return; }
+
+        var dialog = new InputDialog(this, "Save to Scrivener", "Document title:");
+        var response = (ResponseType)dialog.Run();
+        var title = dialog.InputText;
+        dialog.Destroy();
+
+        if (response != ResponseType.Accept || string.IsNullOrWhiteSpace(title)) return;
+
+        var parentId = _selectedIds.Count > 0 ? _selectedIds.First() : "";
+        var parentItem = _project.AllItems().FirstOrDefault(i => i.Id == parentId && i.Type == "Folder");
+        var targetParentId = parentItem?.Id ?? _project.Binder.FirstOrDefault()?.Id ?? "";
+
+        var writer = new ScrivenerWriter();
+        var result = writer.WriteDocument(_project, targetParentId, title, lastResponse);
+
+        if (result.Success)
+        {
+            SetStatus($"Saved \"{title}\" to Scrivener (ID: {result.DocumentId}).");
+            ReloadProject();
+        }
+        else
+        {
+            ShowError($"Failed to save: {result.Error}");
+        }
+    }
+
+    private void ReloadProject()
+    {
+        if (_project is null) return;
+        var path = _project.FolderPath;
+        var parseResult = ScrivenerParser.Parse(path);
+        if (!parseResult.Success) return;
+
+        _project = parseResult.Project;
+        _binderPanel.LoadProject(_project!);
+    }
+
     private void ShowError(string message)
     {
         var d = new MessageDialog(this, DialogFlags.Modal, MessageType.Error, ButtonsType.Ok, "%s", message);
         d.Run();
         d.Destroy();
+    }
+
+    private void OnMessageCompleted()
+    {
+        var stats = _service?.LastCacheStats;
+        if (stats is null) return;
+        if (stats.CacheReadTokens > 0)
+            SetStatus($"Cache: {stats.CacheReadTokens:N0} tokens read from cache, {stats.CacheCreationTokens:N0} created");
+        else if (stats.CacheCreationTokens > 0)
+            SetStatus($"Cache: {stats.CacheCreationTokens:N0} tokens cached (next turn will use cache)");
     }
 
     private void SetStatus(string message)

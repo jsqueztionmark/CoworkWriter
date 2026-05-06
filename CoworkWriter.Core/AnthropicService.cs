@@ -4,6 +4,8 @@ using System.Runtime.CompilerServices;
 
 namespace CoworkWriter.Core;
 
+public record CacheStats(int CacheCreationTokens, int CacheReadTokens);
+
 public class AnthropicService : IAnthropicService
 {
     private readonly Func<MessageParameters, CancellationToken, IAsyncEnumerable<MessageResponse>> _streamFunc;
@@ -27,12 +29,15 @@ public class AnthropicService : IAnthropicService
 
     public IReadOnlyList<Message> History => _history.Messages;
     public string? SystemPrompt { get; set; }
+    public CacheStats? LastCacheStats { get; private set; }
 
     public async IAsyncEnumerable<string> StreamMessageAsync(
         string userMessage,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         _history.AddUserMessage(userMessage);
+
+        SetCacheBreakpoints();
 
         var parameters = new MessageParameters
         {
@@ -41,8 +46,9 @@ public class AnthropicService : IAnthropicService
             Model = _model,
             Stream = true,
             Temperature = 1.0m,
+            PromptCaching = PromptCacheType.FineGrained,
             System = SystemPrompt is not null
-                ? [new SystemMessage(SystemPrompt) { CacheControl = new CacheControl { Type = CacheControlType.ephemeral } }]
+                ? [new SystemMessage(SystemPrompt) { CacheControl = new CacheControl { Type = CacheControlType.ephemeral, TTL = CacheDuration.OneHour } }]
                 : null
         };
 
@@ -57,6 +63,21 @@ public class AnthropicService : IAnthropicService
 
         if (responses.Count > 0)
             _history.AddStreamingResponse(responses);
+
+        var usage = responses.LastOrDefault(r => r.Usage != null)?.Usage;
+        if (usage != null)
+            LastCacheStats = new CacheStats(usage.CacheCreationInputTokens, usage.CacheReadInputTokens);
+    }
+
+    internal void SetCacheBreakpoints()
+    {
+        foreach (var msg in _history.Messages)
+            if (msg.Content is { Count: > 0 })
+                msg.Content[^1].CacheControl = null;
+
+        var lastAssistant = _history.Messages.LastOrDefault(m => m.Role == RoleType.Assistant);
+        if (lastAssistant?.Content is { Count: > 0 })
+            lastAssistant.Content[^1].CacheControl = new CacheControl { Type = CacheControlType.ephemeral };
     }
 
     public void ClearHistory() => _history.Clear();

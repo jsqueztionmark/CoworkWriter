@@ -5,12 +5,13 @@ namespace CoworkWriter.Tests.Settings;
 public class SettingsStoreTests : IDisposable
 {
     private readonly string _tempDir;
-    private readonly SettingsStore _store = new();
+    private readonly SettingsStore _store;
 
     public SettingsStoreTests()
     {
         _tempDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
         Directory.CreateDirectory(_tempDir);
+        _store = new SettingsStore(Path.Combine(_tempDir, "settings.json"));
     }
 
     public void Dispose() => Directory.Delete(_tempDir, recursive: true);
@@ -72,14 +73,29 @@ public class SettingsStoreTests : IDisposable
             Model: SettingsStore.AllowedModels[0],
             DefaultSystemPrompt: "You are a noir fiction assistant.");
 
-        // Write to the real settings path for this test by using a temp path directly
-        var path = System.IO.Path.Combine(_tempDir, "settings.json");
-        System.IO.File.WriteAllText(path, System.Text.Json.JsonSerializer.Serialize(settings));
-        var loaded = System.Text.Json.JsonSerializer.Deserialize<AppSettings>(System.IO.File.ReadAllText(path));
+        _store.Save(settings);
+        var loaded = _store.Load();
 
-        Assert.Equal(settings.ApiKey, loaded!.ApiKey);
+        Assert.Equal(settings.ApiKey, loaded.ApiKey);
         Assert.Equal(settings.Model, loaded.Model);
         Assert.Equal(settings.DefaultSystemPrompt, loaded.DefaultSystemPrompt);
+    }
+
+    [Fact]
+    public void Load_SavedKeyPresent_IgnoresEnvironmentVariable()
+    {
+        var saved = Environment.GetEnvironmentVariable("ANTHROPIC_API_KEY");
+        try
+        {
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", "sk-ant-env-key");
+            _store.Save(new AppSettings(ApiKey: "sk-ant-saved-key"));
+            var loaded = _store.Load();
+            Assert.Equal("sk-ant-saved-key", loaded.ApiKey);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("ANTHROPIC_API_KEY", saved);
+        }
     }
 
     [Fact]
@@ -123,9 +139,9 @@ public class SettingsStoreTests : IDisposable
     }
 
     [Fact]
-    public void SettingsPath_IsInsideConfigDirectory()
+    public void DefaultPath_IsInsideConfigDirectory()
     {
-        var path = SettingsStore.SettingsPath();
+        var path = SettingsStore.DefaultPath();
         Assert.Contains(".config", path);
         Assert.EndsWith(".json", path);
     }

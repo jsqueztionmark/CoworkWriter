@@ -6,6 +6,7 @@ public interface IAnthropicService
 {
     IReadOnlyList<Message> History { get; }
     string? SystemPrompt { get; set; }
+    CacheStats? LastCacheStats { get; }
     IAsyncEnumerable<string> StreamMessageAsync(string userMessage, CancellationToken ct = default);
     void ClearHistory();
     void LoadHistory(ConversationHistory history);

@@ -5,6 +5,8 @@ namespace CoworkWriter.Core.Settings;
 
 public class SettingsStore
 {
+    private readonly string _path;
+
     public static readonly string[] AllowedModels =
     [
         AnthropicModels.Claude46Sonnet,
@@ -13,29 +15,31 @@ public class SettingsStore
         AnthropicModels.Claude45Haiku,
     ];
 
-    public static string SettingsPath() =>
+    public static string DefaultPath() =>
         Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             ".config", "CoworkWriter", "settings.json");
 
+    public SettingsStore() : this(DefaultPath()) { }
+
+    public SettingsStore(string path) => _path = path;
+
     public void Save(AppSettings settings)
     {
-        var path = SettingsPath();
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
+        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+        File.WriteAllText(_path, JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
     }
 
     public AppSettings Load()
     {
-        var path = SettingsPath();
         AppSettings settings;
-        if (!File.Exists(path))
+        if (!File.Exists(_path))
             settings = new AppSettings();
         else
         {
             try
             {
-                settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path)) ?? new AppSettings();
+                settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_path)) ?? new AppSettings();
             }
             catch (JsonException)
             {

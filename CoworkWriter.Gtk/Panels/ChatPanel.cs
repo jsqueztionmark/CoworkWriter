@@ -1,4 +1,6 @@
 using CoworkWriter.Core;
+using CoworkWriter.Core.Agentic;
+using CoworkWriter.Core.Scrivener;
 using CoworkWriter.Core.Writing;
 using CoworkWriter.Gtk.Dialogs;
 using Gtk;
@@ -13,6 +15,7 @@ public class ChatPanel : Box
     private readonly TextBuffer _historyBuffer;
     private readonly TextTag _userTag;
     private readonly TextTag _assistantTag;
+    private readonly TextTag _statusTag;
     private readonly TextView _inputView;
     private readonly Button _sendButton;
     private bool _streaming;
@@ -38,6 +41,11 @@ public class ChatPanel : Box
         _assistantTag = new TextTag("assistant");
         _assistantTag.Foreground = "#226622";
         _historyBuffer.TagTable.Add(_assistantTag);
+
+        _statusTag = new TextTag("status");
+        _statusTag.Foreground = "#886600";
+        _statusTag.Style = Pango.Style.Italic;
+        _historyBuffer.TagTable.Add(_statusTag);
 
         var historyScroll = new ScrolledWindow { ShadowType = ShadowType.In };
         historyScroll.Add(_historyView);
@@ -73,8 +81,19 @@ public class ChatPanel : Box
         AddCmdButton(bar, "/brainstorm…", ShowBrainstormDialog);
         AddCmdButton(bar, "/edit…",       ShowEditDialog);
 
+        var sep = new Separator(Orientation.Vertical) { MarginStart = 4, MarginEnd = 4 };
+        bar.PackStart(sep, false, false, 0);
+
+        AddCmdButton(bar, "Write Chapter…", () => WriteChapterRequested?.Invoke());
+        AddCmdButton(bar, "Batch Edit…",    () => BatchEditRequested?.Invoke());
+        AddCmdButton(bar, "Save to Scriv",  () => SaveToScrivRequested?.Invoke());
+
         return bar;
     }
+
+    public event System.Action? WriteChapterRequested;
+    public event System.Action? BatchEditRequested;
+    public event System.Action? SaveToScrivRequested;
 
     private void AddCmdButton(Box bar, string label, System.Action action)
     {
@@ -82,6 +101,8 @@ public class ChatPanel : Box
         btn.Clicked += (_, _) => action();
         bar.PackStart(btn, false, false, 0);
     }
+
+    public event System.Action? MessageCompleted;
 
     public void SetService(AnthropicService service) => _service = service;
 
@@ -143,6 +164,7 @@ public class ChatPanel : Box
                     ScrollToEnd();
                     _streaming = false;
                     _sendButton.Sensitive = true;
+                    MessageCompleted?.Invoke();
                     return false;
                 });
             }
@@ -167,6 +189,35 @@ public class ChatPanel : Box
         var mark = _historyBuffer.GetMark("insert");
         if (mark != null)
             _historyView.ScrollToMark(mark, 0.0, false, 0, 0);
+    }
+
+    public void AppendStatus(string text)
+    {
+        var end = _historyBuffer.EndIter;
+        _historyBuffer.InsertWithTags(ref end, $"[{text}]\n", _statusTag);
+        ScrollToEnd();
+    }
+
+    public void AppendResult(string label, string content)
+    {
+        AppendSpeaker(label, _assistantTag);
+        var end = _historyBuffer.EndIter;
+        _historyBuffer.Insert(ref end, content + "\n\n");
+        ScrollToEnd();
+    }
+
+    public string? GetLastAssistantResponse()
+    {
+        if (_service is null) return null;
+        var last = _service.History.LastOrDefault(m => m.Role == Anthropic.SDK.Messaging.RoleType.Assistant);
+        if (last?.Content is null) return null;
+        return string.Concat(last.Content.OfType<Anthropic.SDK.Messaging.TextContent>().Select(c => c.Text));
+    }
+
+    public void SetBusy(bool busy)
+    {
+        _streaming = busy;
+        _sendButton.Sensitive = !busy;
     }
 
     private void ShowBrainstormDialog()
